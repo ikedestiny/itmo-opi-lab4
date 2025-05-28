@@ -1,0 +1,173 @@
+plugins {
+    id 'java'
+    id 'war'
+    id 'org.gretty' version '4.1.1'  // For local deployment (optional)
+    id 'org.hidetake.ssh'  version '2.11.2'
+    id 'org.flywaydb.flyway' version '9.8.1'
+}
+
+ext {
+    wildflyHome = project.hasProperty('wildflyHome') ? project.getProperty('wildflyHome') : '/opt/wildfly'
+    wildflyHost = project.hasProperty('wildflyHost') ? project.getProperty('wildflyHost') : 'localhost'
+    wildflyPort = project.hasProperty('wildflyPort') ? project.getProperty('wildflyPort') : '9990'
+    wildflyUser = project.hasProperty('wildflyUser') ? project.getProperty('wildflyUser') : 'admin'
+    wildflyPassword = project.hasProperty('wildflyPassword') ? project.getProperty('wildflyPassword') : 'admin'
+    versionNumber = project.hasProperty('versionNumber') ? project.getProperty('versionNumber') : '1.0'
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    compileOnly('jakarta.enterprise:jakarta.enterprise.cdi-api:4.0.1')
+    compileOnly('jakarta.validation:jakarta.validation-api:3.0.2')
+    compileOnly('jakarta.ejb:jakarta.ejb-api:4.0.1')
+    compileOnly('jakarta.faces:jakarta.faces-api:3.0.0')
+    compileOnly('jakarta.servlet:jakarta.servlet-api:6.0.0')
+    compileOnly('jakarta.persistence:jakarta.persistence-api:3.1.0')
+    compileOnly('jakarta.platform:jakarta.jakartaee-web-api:9.0.0')
+    compileOnly('jakarta.json:jakarta.json-api:2.1.1')
+    compileOnly('jakarta.json.bind:jakarta.json.bind-api:3.0.0')
+
+    testImplementation 'org.junit.jupiter:junit-jupiter-api:5.10.0'
+    testRuntimeOnly 'org.junit.jupiter:junit-jupiter-engine:5.10.0'
+
+    implementation('org.postgresql:postgresql:42.6.0')
+    implementation('org.hibernate:hibernate-core:6.2.6.Final')
+    implementation('org.primefaces:primefaces:13.0.0:jakarta')
+
+    implementation('com.google.guava:guava:31.0.1-jre')
+    implementation('org.apache.commons:commons-lang3:3.12.0')
+    implementation('com.google.code.gson:gson:2.10.1')
+
+    testImplementation('junit:junit:4.13.1')
+
+    runtimeOnly('org.flywaydb:flyway-gradle-plugin:9.16.1')
+
+    compileOnly('org.projectlombok:lombok:1.18.26')
+    annotationProcessor('org.projectlombok:lombok:1.18.26')
+    testCompileOnly('org.projectlombok:lombok:1.18.26')
+    testAnnotationProcessor('org.projectlombok:lombok:1.18.26')
+}
+
+
+war {
+    archiveFileName = "${project.name}.war"
+    manifest {
+        attributes(
+                'Implementation-Title': 'JSF Web Application',
+                'Implementation-Version': versionNumber
+        )
+    }
+}
+
+
+tasks.withType(Test) {
+    useJUnitPlatform()
+    maxParallelForks = 1 // Limit the number of forked JVMs
+    forkEvery = 0        // Run all tests in a single fork if possible
+
+    testLogging {
+        events "passed", "skipped", "failed"
+    }
+    reports {
+        junitXml.required = true
+        html.required = true
+    }
+}
+
+ssh.settings {
+    knownHosts = allowAnyHosts  // or specify known hosts file
+}
+
+remotes {
+    heliosServer {
+        host = 'helios.se.ifmo.ru'
+        user = 's374215'
+        port = 2222
+        password = 'OYfw.5345'
+    }
+}
+
+task scp {
+    dependsOn war
+    doLast {
+        def warFile = war.archiveFile.get().asFile  // define warFile here
+        ssh.run {
+            session(remotes.heliosServer) {
+                def homePath = execute('echo $HOME').trim()
+                println "Remote home directory: $homePath"
+                put from: warFile, into: "$homePath/${warFile.name}"
+            }
+        }
+    }
+}
+
+task copyToLocalWildfly {
+    description 'Copies the WAR file to the local Wildfly deployments directory after build'
+    group 'Deployment'
+    dependsOn build
+
+    doLast {
+        def warFile = "${buildDir}/libs/Lab3Groovy.war" // Adjust to your WAR file name
+        def localDeploymentsDir = 'D:/wildfly-new/wildfly-36.0.1.Final/wildfly-36.0.1.Final/standalone/deployments/' // Adjust to your local d directory path
+
+        // Copy the WAR file
+        copy {
+            from warFile
+            into localDeploymentsDir
+        }
+        println "Successfully copied ${warFile} to ${localDeploymentsDir}"
+    }
+}
+
+
+
+
+
+task compile {
+    dependsOn compileJava, compileTestJava
+    group = 'build'
+    description = 'Compiles both main and test Java sources.'
+}
+
+
+
+task report {
+    dependsOn test
+
+    doLast {
+        def testResultsDir = file("${project.buildDir}/test-results/test")
+        def xmlFiles = fileTree(testResultsDir).matching {
+            include 'TEST-*.xml'
+        }.files
+
+        if (!xmlFiles.isEmpty()) {
+            xmlFiles.each { file ->
+                project.exec {
+                    commandLine 'git', 'add', '-f', file.absolutePath
+
+                }
+            }
+
+            project.exec {
+                commandLine 'git', 'commit', '-m', "Test report for version ${versionNumber}"
+            }
+        } else {
+            println "No test result XML files found to commit."
+        }
+    }
+
+    onlyIf {
+        !tasks.test.state.failure
+    }
+}
+
+test {
+    useJUnitPlatform()
+}
+
+// Task dependencies
+test.mustRunAfter war
+report.mustRunAfter test

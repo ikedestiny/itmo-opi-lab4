@@ -1,0 +1,13 @@
+:root {
+    --primary-text: #f0f0f0;              /* Light gray for readability */
+    --secondary-text: #a9b1ba;            /* Muted light for secondary text */
+    --error: #ff4c4c;                     /* Bright red for errors */
+    --primary-background: #0b0f1a;        /* Very dark navy/black background */
+    --secondary-background: #1a1f2b;      /* Slightly lighter for contrast */
+    --borders-color: #3a3f4b;             /* Dark gray for subtle borders */
+    --areas-color: #00bfa6;               /* Bold cyan/teal accent */
+    --hit-dot-color: #8dfc58;             /* Bright lime green for hits */
+    --miss-dot-color: #ff6e6e;            /* Coral red for misses */
+
+    background-color: var(--primary-background);
+}
